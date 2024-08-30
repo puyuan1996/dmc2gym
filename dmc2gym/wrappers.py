@@ -7,7 +7,7 @@ import numpy as np
 def _spec_to_box(spec, dtype):
     def extract_min_max(s):
         assert s.dtype == np.float64 or s.dtype == np.float32
-        dim = np.int(np.prod(s.shape))
+        dim = np.int32(np.prod(s.shape))
         if type(s) == specs.Array:
             bound = np.inf * np.ones(dim, dtype=np.float32)
             return -bound, bound
@@ -111,6 +111,14 @@ class DMCWrapper(core.Env):
                 obs = obs.transpose(2, 0, 1).copy()
         else:
             obs = _flatten_obs(time_step.observation)
+            image_obs = self.render(
+                height=self._height,
+                width=self._width,
+                camera_id=self._camera_id
+            )
+            if self._channels_first:
+                image_obs = image_obs.transpose(2, 0, 1).copy()
+            obs = {'image': image_obs, 'state': obs}
         return obs
 
     def _convert_action(self, action):
@@ -156,7 +164,13 @@ class DMCWrapper(core.Env):
             done = time_step.last()
             if done:
                 break
-        obs = self._get_obs(time_step)
+        if self._from_pixels:
+            obs = self._get_obs(time_step)
+        else:
+            obs = self._get_obs(time_step)
+            extra = {'image_obs': obs['image']}
+            obs = obs['state']
+
         self.current_state = _flatten_obs(time_step.observation)
         extra['discount'] = time_step.discount
         return obs, reward, done, extra
@@ -165,6 +179,7 @@ class DMCWrapper(core.Env):
         time_step = self._env.reset()
         self.current_state = _flatten_obs(time_step.observation)
         obs = self._get_obs(time_step)
+
         return obs
 
     def render(self, mode='rgb_array', height=None, width=None, camera_id=0):
