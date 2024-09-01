@@ -47,7 +47,8 @@ class DMCWrapper(core.Env):
         camera_id=0,
         frame_skip=1,
         environment_kwargs=None,
-        channels_first=True
+        channels_first=True,
+        render_image=False,
     ):
         assert 'random' in task_kwargs, 'please specify a seed, for deterministic behaviour'
         self._from_pixels = from_pixels
@@ -56,6 +57,7 @@ class DMCWrapper(core.Env):
         self._camera_id = camera_id
         self._frame_skip = frame_skip
         self._channels_first = channels_first
+        self._render_image = render_image
 
         # create task
         self._env = suite.load(
@@ -100,24 +102,36 @@ class DMCWrapper(core.Env):
     def __getattr__(self, name):
         return getattr(self._env, name)
 
-    def _get_obs(self, time_step):
+    def _get_obs(self, time_step, render_image=False):
         if self._from_pixels:
-            obs = self.render(
-                height=self._height,
-                width=self._width,
-                camera_id=self._camera_id
-            )
-            if self._channels_first:
-                obs = obs.transpose(2, 0, 1).copy()
+            try:
+                obs = self.render(
+                    height=self._height,
+                    width=self._width,
+                    camera_id=self._camera_id
+                )
+                if self._channels_first:
+                    obs = obs.transpose(2, 0, 1).copy()
+            except Exception as e:
+                print(f"Render error: {e}")
+                obs = np.zeros(self.observation_space.shape, dtype=np.uint8)
         else:
             obs = _flatten_obs(time_step.observation)
-            image_obs = self.render(
-                height=self._height,
-                width=self._width,
-                camera_id=self._camera_id
-            )
-            if self._channels_first:
-                image_obs = image_obs.transpose(2, 0, 1).copy()
+            if self._render_image:
+                try:
+                    image_obs = self.render(
+                        height=self._height,
+                        width=self._width,
+                        camera_id=self._camera_id
+                    )
+                    if self._channels_first:
+                        image_obs = image_obs.transpose(2, 0, 1).copy()
+                except Exception as e:
+                    print(f"Render error: {e}")
+                    image_obs = np.zeros(self.observation_space.shape, dtype=np.uint8)
+            else:
+                image_obs = np.zeros(self.observation_space.shape, dtype=np.uint8)
+                
             obs = {'image': image_obs, 'state': obs}
         return obs
 
@@ -151,7 +165,7 @@ class DMCWrapper(core.Env):
         self._norm_action_space.seed(seed)
         self._observation_space.seed(seed)
 
-    def step(self, action):
+    def step(self, action, render_image=False):
         assert self._norm_action_space.contains(action)
         action = self._convert_action(action)
         assert self._true_action_space.contains(action)
@@ -167,7 +181,7 @@ class DMCWrapper(core.Env):
         if self._from_pixels:
             obs = self._get_obs(time_step)
         else:
-            obs = self._get_obs(time_step)
+            obs = self._get_obs(time_step, render_image=self._render_image)
             extra = {'image_obs': obs['image']}
             obs = obs['state']
 
@@ -175,10 +189,10 @@ class DMCWrapper(core.Env):
         extra['discount'] = time_step.discount
         return obs, reward, done, extra
 
-    def reset(self):
+    def reset(self, render_image=False):
         time_step = self._env.reset()
         self.current_state = _flatten_obs(time_step.observation)
-        obs = self._get_obs(time_step)
+        obs = self._get_obs(time_step, render_image=self._render_image)
 
         return obs
 
@@ -187,6 +201,10 @@ class DMCWrapper(core.Env):
         height = height or self._height
         width = width or self._width
         camera_id = camera_id or self._camera_id
-        return self._env.physics.render(
-            height=height, width=width, camera_id=camera_id
-        )
+        try:
+            return self._env.physics.render(
+                height=height, width=width, camera_id=camera_id
+            )
+        except Exception as e:
+            print(f"Render error: {e}")
+            return np.zeros((height, width, 3), dtype=np.uint8)
