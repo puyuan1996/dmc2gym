@@ -132,7 +132,7 @@ class DMCWrapper(core.Env):
             else:
                 image_obs = np.zeros(self.observation_space.shape, dtype=np.uint8)
                 
-            obs = {'image': image_obs, 'state': obs}
+            obs = {'image_obs': image_obs, 'state': obs}
         return obs
 
     def _convert_action(self, action):
@@ -182,7 +182,7 @@ class DMCWrapper(core.Env):
             obs = self._get_obs(time_step)
         else:
             obs = self._get_obs(time_step, render_image=self._render_image)
-            extra = {'image_obs': obs['image']}
+            extra = {'image_obs': obs['image_obs']}
             obs = obs['state']
 
         self.current_state = _flatten_obs(time_step.observation)
